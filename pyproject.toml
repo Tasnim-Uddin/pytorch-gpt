@@ -11,3 +11,10 @@ dependencies = ["torch", "numpy>=2.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]   # style errors, likely bugs (e.g. unused imports), import ordering

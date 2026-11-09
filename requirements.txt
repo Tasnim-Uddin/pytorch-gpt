@@ -2,3 +2,5 @@
 torch==2.14.1
 numpy>=2.0
 pytest
+ruff
+pre-commit

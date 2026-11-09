@@ -62,18 +62,20 @@ def get_batch(
         generator: Random generator for reproducible batches; None uses the global one.
 
     Returns:
-        Inputs X and targets Y, both of shape (B, T) on `device`, where Y[b, t] is the
-        token that follows X[b, t].
+        Inputs and targets, both of shape (B, T) on `device`, where targets[b, t] is the
+        token that follows inputs[b, t].
     """
-    # B random start positions; high is excluded and leaves room for the +1 shift in Y
+    # B random start positions; high is excluded and leaves room for the +1 shift in targets
     starts = torch.randint(0, len(ids) - context_length, (batch_size,), generator=generator)  # (B,)
 
     # Index grid: row b is starts[b], starts[b]+1, ..., starts[b]+T-1
+    # (B, 1) + (T,) broadcasts to (B, T)
     offsets = torch.arange(context_length)  # (T,)
     index_grid = starts[:, None] + offsets  # (B, T)
 
-    X = ids[index_grid]  # (B, T) inputs
-    Y = ids[index_grid + 1]  # (B, T) targets: every index shifted one later
+    # Indexing with a (B, T) grid gathers a (B, T) tensor of token IDs
+    inputs = ids[index_grid]  # (B, T)
+    targets = ids[index_grid + 1]  # (B, T): every index shifted one later
 
     # The dataset stays on the CPU; only this small batch is sent to the GPU
-    return X.to(device), Y.to(device)
+    return inputs.to(device), targets.to(device)

@@ -35,6 +35,7 @@ src/pytorch_gpt/
   data.py        train/validation split and random batches
   model.py       transformer layers and the GPT model
 tests/           pytest tests, one file per module
+docs/            notes, and the naming conventions in docs/conventions.md
 data/            datasets (not tracked)
 checkpoints/     saved weights (not tracked)
 ```

@@ -1,4 +1,4 @@
-"""Transformer layers for the GPT model."""
+"""The GPT model and the transformer layers it is built from."""
 
 import math
 
@@ -52,12 +52,12 @@ class CausalSelfAttention(nn.Module):
         Returns:
             Output of shape (B, T, D).
         """
-        B, T, D = x.shape
+        T = x.shape[1]
 
-        # Project, then split heads: (B, T, D) -> (B, T, H, d_k) -> (B, H, T, d_k)
-        q = self.q_proj(x).view(B, T, self.num_heads, self.d_k).transpose(1, 2)
-        k = self.k_proj(x).view(B, T, self.num_heads, self.d_k).transpose(1, 2)
-        v = self.v_proj(x).view(B, T, self.num_heads, self.d_k).transpose(1, 2)
+        # Project, then split into heads: (B, T, D) -> (B, H, T, d_k)
+        q = self._split_heads(self.q_proj(x))
+        k = self._split_heads(self.k_proj(x))
+        v = self._split_heads(self.v_proj(x))
 
         # Scaled dot-product scores: (B, H, T, d_k) @ (B, H, d_k, T) -> (B, H, T, T)
         # Dividing by sqrt(d_k) keeps their variance near 1, so softmax does not saturate
@@ -73,11 +73,19 @@ class CausalSelfAttention(nn.Module):
         # Weighted sum of values: (B, H, T, T) @ (B, H, T, d_k) -> (B, H, T, d_k)
         out = attn_weights @ v
 
-        # Merge heads: (B, H, T, d_k) -> (B, T, H, d_k) -> (B, T, D)
-        # transpose only changes strides, and view needs contiguous memory
-        out = out.transpose(1, 2).contiguous().view(B, T, D)
+        return self.out_proj(self._merge_heads(out))  # (B, T, D)
 
-        return self.out_proj(out)  # (B, T, D)
+    def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        """Cut each token's vector into heads: (B, T, D) -> (B, H, T, d_k)."""
+        B, T, _ = x.shape
+        # Moving H next to B lets every later operation treat heads as a batch dimension
+        return x.view(B, T, self.num_heads, self.d_k).transpose(1, 2)
+
+    def _merge_heads(self, x: torch.Tensor) -> torch.Tensor:
+        """Join the heads back into one vector per token: (B, H, T, d_k) -> (B, T, D)."""
+        B, _, T, _ = x.shape
+        # transpose only changes strides, and view needs contiguous memory
+        return x.transpose(1, 2).contiguous().view(B, T, self.d_model)
 
 
 class FeedForward(nn.Module):
@@ -116,7 +124,7 @@ class TransformerBlock(nn.Module):
 
     Args:
         d_model: Width of each token's vector, D.
-        num_heads: Number of attention heads, H.
+        num_heads: Number of attention heads, H; must divide `d_model`.
         context_length: Longest sequence the block accepts.
         d_ff: Width of the feed-forward hidden layer.
     """

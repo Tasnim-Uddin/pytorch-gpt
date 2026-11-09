@@ -21,6 +21,12 @@ mkdir -p data && curl -o data/input.txt \
   https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 ```
 
+## Training
+
+```sh
+uv run python -m pytorch_gpt.train
+```
+
 ## Tests
 
 ```sh
@@ -35,6 +41,7 @@ src/pytorch_gpt/
   tokenizer.py   text <-> token IDs
   data.py        train/validation split and random batches
   model.py       transformer layers and the GPT model
+  train.py       training loop with periodic loss evaluation
 tests/           pytest tests, one file per module
 docs/            notes, and the naming conventions in docs/conventions.md
 data/            datasets (not tracked)

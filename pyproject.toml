@@ -28,4 +28,23 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]   # style errors, likely bugs (e.g. unused imports), import ordering
+select = [
+    "E",    # pycodestyle: style errors
+    "F",    # pyflakes: likely bugs, e.g. unused imports
+    "I",    # isort: import ordering
+    "UP",   # pyupgrade: modern Python syntax
+    "B",    # flake8-bugbear: common bug patterns
+    "SIM",  # flake8-simplify: needlessly complex code
+    "RUF",  # ruff-specific checks
+    "D",    # pydocstyle: docstring format
+]
+ignore = ["D107"]  # __init__ args are documented in the class docstring
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D1"]  # test names say what they check; docstrings optional
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

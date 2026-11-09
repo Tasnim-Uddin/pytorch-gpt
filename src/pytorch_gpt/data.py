@@ -1,6 +1,4 @@
-"""
-Data pipeline: train/validation split and random batches.
-"""
+"""Data pipeline: train/validation split and random batches."""
 
 from pathlib import Path
 
@@ -9,12 +7,21 @@ import torch
 from pytorch_gpt.tokenizer import CharTokenizer
 
 
-def load_data(path, train_fraction=0.9):
-    """
-    Reads a text file, builds the tokenizer, and splits the encoded text.
-    path:           text file to load (str or Path)
-    train_fraction: share of the text used for training (the rest is validation)
-    returns:        tokenizer, train_ids (N_train,), val_ids (N_val,)  1D long tensors on the CPU
+def load_data(
+    path: str | Path, train_fraction: float = 0.9
+) -> tuple[CharTokenizer, torch.Tensor, torch.Tensor]:
+    """Read a text file, build its tokenizer, and split the encoded text.
+
+    Args:
+        path: Text file to load.
+        train_fraction: Share of the text used for training; the rest is validation.
+
+    Returns:
+        The tokenizer, then the training IDs of shape (N_train,) and the validation
+        IDs of shape (N_val,), both long tensors on the CPU.
+
+    Raises:
+        FileNotFoundError: If `path` does not exist.
     """
     path = Path(path)
     if not path.exists():
@@ -38,15 +45,25 @@ def load_data(path, train_fraction=0.9):
     return tokenizer, train_ids, val_ids
 
 
-def get_batch(ids, batch_size, context_length, device, generator=None):
-    """
-    Random chunks of the data as inputs; the same chunks shifted by one as targets.
-    ids:            (N_ids,) 1D long tensor on the CPU (train_ids or val_ids)
-    batch_size:     B, number of chunks
-    context_length: T, tokens per chunk
-    device:         where to put the batch ("cuda" or "cpu")
-    generator:      torch.Generator for reproducible batches (None = global random state)
-    returns:        X (B, T), Y (B, T) on device, with Y[b, t] = the token after X[b, t]
+def get_batch(
+    ids: torch.Tensor,
+    batch_size: int,
+    context_length: int,
+    device: torch.device | str,
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample random chunks of tokens as inputs, with the next token of each as targets.
+
+    Args:
+        ids: Token IDs of shape (N,) on the CPU, e.g. `train_ids` or `val_ids`.
+        batch_size: Number of chunks, B.
+        context_length: Tokens per chunk, T.
+        device: Device to put the batch on, e.g. "cuda" or "cpu".
+        generator: Random generator for reproducible batches; None uses the global one.
+
+    Returns:
+        Inputs X and targets Y, both of shape (B, T) on `device`, where Y[b, t] is the
+        token that follows X[b, t].
     """
     # B random start positions; high is excluded and leaves room for the +1 shift in Y
     starts = torch.randint(0, len(ids) - context_length, (batch_size,), generator=generator)  # (B,)

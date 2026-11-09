@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from pytorch_gpt.config import GPTConfig
+
 
 class CausalSelfAttention(nn.Module):
     """Multi-head self-attention in which each token sees only itself and earlier tokens.
@@ -139,3 +141,68 @@ class TransformerBlock(nn.Module):
         x = x + self.attn(self.attn_norm(x))  # tokens exchange information
         x = x + self.ffn(self.ffn_norm(x))  # each token is processed on its own
         return x  # (B, T, D)
+
+
+class GPT(nn.Module):
+    """Decoder-only transformer that predicts the next token at every position.
+
+    Args:
+        config: Architecture settings.
+    """
+
+    def __init__(self, config: GPTConfig) -> None:
+        super().__init__()
+        self.config = config
+
+        # Lookup tables: one row per token ID, and one row per position
+        self.token_embedding = nn.Embedding(config.vocab_size, config.d_model)
+        self.position_embedding = nn.Embedding(config.context_length, config.d_model)
+
+        # Separate blocks, each with its own weights; ModuleList registers their parameters
+        self.blocks = nn.ModuleList(
+            TransformerBlock(config.d_model, config.num_heads, config.context_length, config.d_ff)
+            for _ in range(config.num_layers)
+        )
+
+        # Pre-norm never normalises the residual stream, so it is normalised once at the end
+        self.final_norm = nn.LayerNorm(config.d_model)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+
+    def forward(
+        self, token_ids: torch.Tensor, targets: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Compute next-token logits, and the loss if targets are given.
+
+        Args:
+            token_ids: Input token IDs of shape (B, T), with T <= context_length.
+            targets: Next-token IDs of shape (B, T), or None to skip the loss.
+
+        Returns:
+            Logits of shape (B, T, V), and the mean cross-entropy loss as a scalar
+            tensor, or None when `targets` is None.
+
+        Raises:
+            ValueError: If T is longer than `context_length`.
+        """
+        T = token_ids.shape[1]
+        if T > self.config.context_length:
+            raise ValueError(
+                f"sequence length {T} exceeds context_length ({self.config.context_length})"
+            )
+
+        # What each token is plus where it is: (B, T, D) + (T, D) broadcasts to (B, T, D)
+        positions = torch.arange(T, device=token_ids.device)  # (T,)
+        x = self.token_embedding(token_ids) + self.position_embedding(positions)
+
+        for block in self.blocks:
+            x = block(x)  # (B, T, D)
+
+        x = self.final_norm(x)
+        logits = self.lm_head(x)  # (B, T, D) -> (B, T, V)
+
+        if targets is None:
+            return logits, None
+
+        # cross_entropy takes (N, V) scores and (N,) IDs, so merge B and T into N = B * T
+        loss = F.cross_entropy(logits.flatten(0, 1), targets.flatten())
+        return logits, loss

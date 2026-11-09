@@ -76,3 +76,31 @@ class CausalSelfAttention(nn.Module):
         out = out.transpose(1, 2).contiguous().view(B, T, D)
 
         return self.out_proj(out)  # (B, T, D)
+
+
+class FeedForward(nn.Module):
+    """Position-wise feed-forward network: expand, apply GELU, project back.
+
+    Args:
+        d_model: Width of each token's vector, D.
+        d_ff: Width of the hidden layer, usually 4 * d_model.
+    """
+
+    def __init__(self, d_model: int, d_ff: int) -> None:
+        super().__init__()
+        self.up_proj = nn.Linear(d_model, d_ff)
+        self.down_proj = nn.Linear(d_ff, d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Transform each position independently, with the same weights at every position.
+
+        Args:
+            x: Input of shape (B, T, D).
+
+        Returns:
+            Output of shape (B, T, D).
+        """
+        # nn.Linear acts on the last dimension only; B and T are treated as batch dimensions
+        x = self.up_proj(x)  # (B, T, D) -> (B, T, d_ff)
+        x = F.gelu(x)  # elementwise, no learned parameters
+        return self.down_proj(x)  # (B, T, d_ff) -> (B, T, D)

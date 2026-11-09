@@ -38,7 +38,10 @@ select = [
     "RUF",  # ruff-specific checks
     "D",    # pydocstyle: docstring format
 ]
-ignore = ["D107"]  # __init__ args are documented in the class docstring
+ignore = [
+    "D107",    # __init__ args are documented in the class docstring
+    "SIM300",  # treats shape letters (B, T, D) as constants and misreads comparisons
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

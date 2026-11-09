@@ -13,6 +13,11 @@ from pytorch_gpt.model import GPT
 
 DATA_PATH = Path("data/input.txt")
 
+# Sample printed once training ends
+PROMPT = "\n"
+MAX_NEW_TOKENS = 500
+TEMPERATURE = 0.9
+
 
 @torch.no_grad()
 def estimate_loss(
@@ -87,6 +92,11 @@ def main() -> None:
         optimizer.zero_grad()  # backward() adds to .grad, so clear the previous step's
         loss.backward()  # set each parameter's .grad to d(loss)/d(parameter)
         optimizer.step()  # update each parameter using its .grad
+
+    model.eval()
+    prompt_ids = torch.tensor([tokenizer.encode(PROMPT)], dtype=torch.long, device=device)  # (1, T)
+    output_ids = model.generate(prompt_ids, MAX_NEW_TOKENS, temperature=TEMPERATURE)
+    print(tokenizer.decode(output_ids[0].tolist()))
 
 
 if __name__ == "__main__":

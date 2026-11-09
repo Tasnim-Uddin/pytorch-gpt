@@ -158,3 +158,28 @@ def test_gpt_rejects_too_long_sequence():
     gpt = make_gpt()
     with pytest.raises(ValueError):
         gpt(make_token_ids(CONTEXT_LENGTH + 1))
+
+
+@pytest.mark.parametrize("prompt_length", [4, CONTEXT_LENGTH])
+def test_generate_appends_to_prompt(prompt_length):
+    gpt = make_gpt()
+    prompt_ids = make_token_ids(prompt_length)
+    max_new_tokens = 5
+
+    # A full-length prompt forces generate to crop to the last context_length tokens
+    token_ids = gpt.generate(prompt_ids, max_new_tokens)
+    assert token_ids.shape == (BATCH_SIZE, prompt_length + max_new_tokens)
+    assert torch.equal(token_ids[:, :prompt_length], prompt_ids)
+
+
+def test_generate_with_top_k_1_picks_most_likely_token():
+    gpt = make_gpt()
+    prompt_length = 4
+    token_ids = gpt.generate(make_token_ids(prompt_length), max_new_tokens=5, top_k=1)
+
+    # Causality means one forward pass over the result reproduces each step's prediction:
+    # logits[:, t] saw only tokens up to t, exactly as generate did when choosing token t + 1
+    with torch.no_grad():
+        logits, _ = gpt(token_ids[:, :-1])
+    most_likely = logits[:, prompt_length - 1 :].argmax(dim=-1)
+    assert torch.equal(token_ids[:, prompt_length:], most_likely)

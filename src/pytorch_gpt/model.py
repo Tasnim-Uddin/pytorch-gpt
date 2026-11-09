@@ -214,3 +214,45 @@ class GPT(nn.Module):
         # cross_entropy takes (N, V) scores and (N,) IDs, so merge B and T into N = B * T
         loss = F.cross_entropy(logits.flatten(0, 1), targets.flatten())
         return logits, loss
+
+    @torch.no_grad()
+    def generate(
+        self,
+        token_ids: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+    ) -> torch.Tensor:
+        """Extend each prompt by sampling one token at a time and feeding it back in.
+
+        Call `model.eval()` first so that layers such as dropout are switched off.
+
+        Args:
+            token_ids: Prompt token IDs of shape (B, T).
+            max_new_tokens: Number of tokens to add to each sequence.
+            temperature: Positive divisor for the logits; below 1 favours likely tokens,
+                above 1 spreads probability towards unlikely ones.
+            top_k: If given, sample only from the `top_k` most likely tokens.
+
+        Returns:
+            Token IDs of shape (B, T + max_new_tokens): each prompt, then its new tokens.
+        """
+        for _ in range(max_new_tokens):
+            # The model has only context_length positions, so keep the most recent tokens
+            context_ids = token_ids[:, -self.config.context_length :]  # (B, T') with T' <= T
+            logits, _ = self(context_ids)  # (B, T', V)
+
+            # Only the last position predicts a token that is not in the sequence yet
+            logits = logits[:, -1, :] / temperature  # (B, V)
+
+            if top_k is not None:
+                # topk sorts in descending order, so the last of the k values is the cutoff
+                k = min(top_k, logits.shape[-1])
+                cutoff = torch.topk(logits, k).values[:, [-1]]  # (B, 1)
+                logits = logits.masked_fill(logits < cutoff, float("-inf"))
+
+            probs = F.softmax(logits, dim=-1)  # (B, V)
+            next_ids = torch.multinomial(probs, num_samples=1)  # (B, 1)
+            token_ids = torch.cat([token_ids, next_ids], dim=1)  # (B, T + 1)
+
+        return token_ids

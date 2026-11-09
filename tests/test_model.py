@@ -1,3 +1,5 @@
+"""Tests for the transformer layers and the GPT model."""
+
 import math
 
 import pytest
@@ -28,21 +30,57 @@ def make_attention() -> CausalSelfAttention:
     return CausalSelfAttention(D_MODEL, NUM_HEADS, CONTEXT_LENGTH)
 
 
-def test_attention_output_shape():
-    attn = make_attention()
+def make_feed_forward() -> FeedForward:
+    torch.manual_seed(0)
+    return FeedForward(D_MODEL, D_FF)
+
+
+def make_transformer_block() -> TransformerBlock:
+    torch.manual_seed(0)
+    return TransformerBlock(D_MODEL, NUM_HEADS, CONTEXT_LENGTH, D_FF)
+
+
+def make_gpt() -> GPT:
+    torch.manual_seed(0)
+    return GPT(GPT_CONFIG)
+
+
+def make_token_ids(length: int = CONTEXT_LENGTH) -> torch.Tensor:
+    return torch.randint(0, VOCAB_SIZE, (BATCH_SIZE, length))
+
+
+def assert_causal(y: torch.Tensor, y_changed: torch.Tensor, t: int) -> None:
+    """Check outputs for inputs that differ only after position t."""
+    # Outputs up to position t must not change
+    assert torch.allclose(y[:, : t + 1], y_changed[:, : t + 1], atol=1e-6)
+    # Outputs after t should change (sanity check that the test does something)
+    assert not torch.allclose(y[:, t + 1 :], y_changed[:, t + 1 :])
+
+
+# Layers that map (B, T, D) to (B, T, D), and the subset that must not look ahead
+ALL_LAYERS = [
+    pytest.param(make_attention, id="attention"),
+    pytest.param(make_feed_forward, id="feed_forward"),
+    pytest.param(make_transformer_block, id="transformer_block"),
+]
+CAUSAL_LAYERS = [
+    pytest.param(make_attention, id="attention"),
+    pytest.param(make_transformer_block, id="transformer_block"),
+]
+
+
+@pytest.mark.parametrize("make_layer", ALL_LAYERS)
+@pytest.mark.parametrize("length", [CONTEXT_LENGTH, CONTEXT_LENGTH // 2])
+def test_layer_preserves_shape(make_layer, length):
+    layer = make_layer()
+    x = torch.randn(BATCH_SIZE, length, D_MODEL)
+    assert layer(x).shape == (BATCH_SIZE, length, D_MODEL)
+
+
+@pytest.mark.parametrize("make_layer", CAUSAL_LAYERS)
+def test_layer_is_causal(make_layer):
+    layer = make_layer()
     x = torch.randn(BATCH_SIZE, CONTEXT_LENGTH, D_MODEL)
-    assert attn(x).shape == (BATCH_SIZE, CONTEXT_LENGTH, D_MODEL)
-
-
-def test_attention_shorter_sequence():
-    attn = make_attention()
-    x = torch.randn(BATCH_SIZE, 10, D_MODEL)
-    assert attn(x).shape == (BATCH_SIZE, 10, D_MODEL)
-
-
-def test_attention_is_causal():
-    attn = make_attention()
-    x = torch.randn(2, CONTEXT_LENGTH, D_MODEL)
 
     # Change every token after position t
     t = 7
@@ -50,24 +88,12 @@ def test_attention_is_causal():
     x_changed[:, t + 1 :] = torch.randn(BATCH_SIZE, CONTEXT_LENGTH - t - 1, D_MODEL)
 
     with torch.no_grad():
-        y = attn(x)
-        y_changed = attn(x_changed)
-
-    # Outputs up to position t must not change
-    assert torch.allclose(y[:, : t + 1], y_changed[:, : t + 1], atol=1e-6)
-    # Outputs after t should change (sanity check that the test does something)
-    assert not torch.allclose(y[:, t + 1 :], y_changed[:, t + 1 :])
+        assert_causal(layer(x), layer(x_changed), t)
 
 
-def make_feed_forward() -> FeedForward:
-    torch.manual_seed(0)
-    return FeedForward(D_MODEL, D_FF)
-
-
-def test_feed_forward_output_shape():
-    ffn = make_feed_forward()
-    x = torch.randn(BATCH_SIZE, CONTEXT_LENGTH, D_MODEL)
-    assert ffn(x).shape == (BATCH_SIZE, CONTEXT_LENGTH, D_MODEL)
+def test_attention_rejects_indivisible_heads():
+    with pytest.raises(ValueError):
+        CausalSelfAttention(D_MODEL, num_heads=5, context_length=CONTEXT_LENGTH)
 
 
 def test_feed_forward_is_position_wise():
@@ -90,49 +116,11 @@ def test_feed_forward_is_position_wise():
     assert not torch.allclose(y[:, t], y_changed[:, t])
 
 
-def make_transformer_block() -> TransformerBlock:
-    torch.manual_seed(0)
-    return TransformerBlock(D_MODEL, NUM_HEADS, CONTEXT_LENGTH, D_FF)
-
-
-def test_transformer_block_output_shape():
-    block = make_transformer_block()
-    x = torch.randn(BATCH_SIZE, CONTEXT_LENGTH, D_MODEL)
-    assert block(x).shape == (BATCH_SIZE, CONTEXT_LENGTH, D_MODEL)
-
-
-def test_transformer_block_is_causal():
-    block = make_transformer_block()
-    x = torch.randn(BATCH_SIZE, CONTEXT_LENGTH, D_MODEL)
-
-    # Change every token after position t
-    t = 7
-    x_changed = x.clone()
-    x_changed[:, t + 1 :] = torch.randn(BATCH_SIZE, CONTEXT_LENGTH - t - 1, D_MODEL)
-
-    with torch.no_grad():
-        y = block(x)
-        y_changed = block(x_changed)
-
-    # Outputs up to position t must not change
-    assert torch.allclose(y[:, : t + 1], y_changed[:, : t + 1], atol=1e-6)
-    # Outputs after t should change (sanity check that the test does something)
-    assert not torch.allclose(y[:, t + 1 :], y_changed[:, t + 1 :])
-
-
-def make_gpt() -> GPT:
-    torch.manual_seed(0)
-    return GPT(GPT_CONFIG)
-
-
-def make_token_ids(length: int = CONTEXT_LENGTH) -> torch.Tensor:
-    return torch.randint(0, VOCAB_SIZE, (BATCH_SIZE, length))
-
-
-def test_gpt_logits_shape():
+@pytest.mark.parametrize("length", [CONTEXT_LENGTH, CONTEXT_LENGTH // 2])
+def test_gpt_logits_shape(length):
     gpt = make_gpt()
-    logits, _ = gpt(make_token_ids())
-    assert logits.shape == (BATCH_SIZE, CONTEXT_LENGTH, VOCAB_SIZE)
+    logits, _ = gpt(make_token_ids(length))
+    assert logits.shape == (BATCH_SIZE, length, VOCAB_SIZE)
 
 
 def test_gpt_loss_is_none_without_targets():
@@ -163,10 +151,7 @@ def test_gpt_is_causal():
         logits, _ = gpt(token_ids)
         logits_changed, _ = gpt(token_ids_changed)
 
-    # Logits up to position t must not change
-    assert torch.allclose(logits[:, : t + 1], logits_changed[:, : t + 1], atol=1e-6)
-    # Logits after t should change (sanity check that the test does something)
-    assert not torch.allclose(logits[:, t + 1 :], logits_changed[:, t + 1 :])
+    assert_causal(logits, logits_changed, t)
 
 
 def test_gpt_rejects_too_long_sequence():

@@ -189,8 +189,9 @@ def top_p_filter(logits: torch.Tensor, p: float) -> torch.Tensor:
     prob_before = torch.cumsum(sorted_probs, dim=-1) - sorted_probs  # (B, V)
     sorted_remove = prob_before >= p  # (B, V) bool, in sorted order
 
-    # Back to vocabulary order: entry j belongs at position sorted_indices[:, j]
-    remove = sorted_remove.scatter(-1, sorted_indices, sorted_remove)  # (B, V)
+    # Back to vocabulary order: write entry j to position sorted_indices[:, j]; the indices
+    # cover every position once, so the all-False start only sets the shape and dtype
+    remove = torch.zeros_like(sorted_remove).scatter(-1, sorted_indices, sorted_remove)  # (B, V)
     return logits.masked_fill(remove, float("-inf"))
 
 

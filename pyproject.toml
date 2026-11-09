@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytorch-gpt"
+version = "0.1.0"
+description = "A GPT in PyTorch, built up step by step"
+requires-python = ">=3.12"
+dependencies = ["torch", "numpy>=2.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

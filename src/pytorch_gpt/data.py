@@ -6,6 +6,10 @@ import torch
 
 from pytorch_gpt.tokenizer import CharTokenizer
 
+TINY_SHAKESPEARE_URL = (
+    "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
+)
+
 
 def load_data(
     path: str | Path, train_fraction: float = 0.9
@@ -27,20 +31,19 @@ def load_data(
     if not path.exists():
         raise FileNotFoundError(
             f"{path} not found. Download Tiny Shakespeare with:\n"
-            "  mkdir -p data && curl -o data/input.txt "
-            "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
+            f"  curl --create-dirs -o {path} {TINY_SHAKESPEARE_URL}"
         )
 
     text = path.read_text(encoding="utf-8")
     tokenizer = CharTokenizer(text)
 
-    # The whole text as one long tensor of token IDs (long: required by nn.Embedding)
+    # The whole text as one tensor of token IDs; int64 because cross_entropy requires it
     all_ids = torch.tensor(tokenizer.encode(text), dtype=torch.long)  # (total characters,)
 
     # One contiguous cut: first part for training, last part held out for validation
-    split = int(train_fraction * len(all_ids))
-    train_ids = all_ids[:split]
-    val_ids = all_ids[split:]
+    num_train = int(train_fraction * len(all_ids))
+    train_ids = all_ids[:num_train]
+    val_ids = all_ids[num_train:]
 
     return tokenizer, train_ids, val_ids
 
@@ -65,7 +68,7 @@ def get_batch(
         Inputs and targets, both of shape (B, T) on `device`, where targets[b, t] is the
         token that follows inputs[b, t].
     """
-    # B random start positions; high is excluded and leaves room for the +1 shift in targets
+    # B random start positions; randint excludes high, leaving room for the +1 shift in targets
     starts = torch.randint(0, len(ids) - context_length, (batch_size,), generator=generator)  # (B,)
 
     # Index grid: row b is starts[b], starts[b]+1, ..., starts[b]+T-1

@@ -1,0 +1,21 @@
+# Virtual environment
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Dataset (downloaded; see README)
+data/
+
+# Saved model weights
+checkpoints/
+*.pt
+*.npz
+
+# Editor and OS files
+.vscode/
+.DS_Store

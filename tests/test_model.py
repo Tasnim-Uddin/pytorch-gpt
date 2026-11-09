@@ -1,8 +1,9 @@
 import torch
 
-from pytorch_gpt.model import CausalSelfAttention
+from pytorch_gpt.model import CausalSelfAttention, FeedForward
 
 D_MODEL = 64
+D_FF = 4 * D_MODEL
 NUM_HEADS = 4
 CONTEXT_LENGTH = 16
 
@@ -41,3 +42,34 @@ def test_attention_is_causal():
     assert torch.allclose(y[:, : t + 1], y_changed[:, : t + 1], atol=1e-6)
     # Outputs after t should change (sanity check that the test does something)
     assert not torch.allclose(y[:, t + 1 :], y_changed[:, t + 1 :])
+
+
+def make_feed_forward() -> FeedForward:
+    torch.manual_seed(0)
+    return FeedForward(D_MODEL, D_FF)
+
+
+def test_feed_forward_output_shape():
+    ffn = make_feed_forward()
+    x = torch.randn(2, CONTEXT_LENGTH, D_MODEL)
+    assert ffn(x).shape == (2, CONTEXT_LENGTH, D_MODEL)
+
+
+def test_feed_forward_is_position_wise():
+    ffn = make_feed_forward()
+    x = torch.randn(2, CONTEXT_LENGTH, D_MODEL)
+
+    # Change only the token at position t; x_changed[:, t] has shape (2, D_MODEL)
+    t = 7
+    x_changed = x.clone()
+    x_changed[:, t] = torch.randn(2, D_MODEL)
+
+    with torch.no_grad():
+        y = ffn(x)
+        y_changed = ffn(x_changed)
+
+    # Outputs at every other position must not change
+    others = torch.arange(CONTEXT_LENGTH) != t  # (T,) bool, False only at t
+    assert torch.allclose(y[:, others], y_changed[:, others], atol=1e-6)
+    # Output at t should change (sanity check that the test does something)
+    assert not torch.allclose(y[:, t], y_changed[:, t])

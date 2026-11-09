@@ -1,6 +1,6 @@
 import torch
 
-from pytorch_gpt.model import CausalSelfAttention, FeedForward
+from pytorch_gpt.model import CausalSelfAttention, FeedForward, TransformerBlock
 
 D_MODEL = 64
 D_FF = 4 * D_MODEL
@@ -73,3 +73,33 @@ def test_feed_forward_is_position_wise():
     assert torch.allclose(y[:, others], y_changed[:, others], atol=1e-6)
     # Output at t should change (sanity check that the test does something)
     assert not torch.allclose(y[:, t], y_changed[:, t])
+
+
+def make_transformer_block() -> TransformerBlock:
+    torch.manual_seed(0)
+    return TransformerBlock(D_MODEL, NUM_HEADS, CONTEXT_LENGTH, D_FF)
+
+
+def test_transformer_block_output_shape():
+    block = make_transformer_block()
+    x = torch.randn(2, CONTEXT_LENGTH, D_MODEL)
+    assert block(x).shape == (2, CONTEXT_LENGTH, D_MODEL)
+
+
+def test_transformer_block_is_causal():
+    block = make_transformer_block()
+    x = torch.randn(2, CONTEXT_LENGTH, D_MODEL)
+
+    # Change every token after position t
+    t = 7
+    x_changed = x.clone()
+    x_changed[:, t + 1 :] = torch.randn(2, CONTEXT_LENGTH - t - 1, D_MODEL)
+
+    with torch.no_grad():
+        y = block(x)
+        y_changed = block(x_changed)
+
+    # Outputs up to position t must not change
+    assert torch.allclose(y[:, : t + 1], y_changed[:, : t + 1], atol=1e-6)
+    # Outputs after t should change (sanity check that the test does something)
+    assert not torch.allclose(y[:, t + 1 :], y_changed[:, t + 1 :])

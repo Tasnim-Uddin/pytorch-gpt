@@ -1,4 +1,4 @@
-"""Tests for the transformer layers and the GPT model."""
+"""Tests for the transformer layers, the GPT model and the sampling filters."""
 
 import math
 
@@ -6,7 +6,14 @@ import pytest
 import torch
 
 from pytorch_gpt.config import GPTConfig
-from pytorch_gpt.model import GPT, CausalSelfAttention, FeedForward, TransformerBlock
+from pytorch_gpt.model import (
+    GPT,
+    CausalSelfAttention,
+    FeedForward,
+    TransformerBlock,
+    top_k_filter,
+    top_p_filter,
+)
 
 BATCH_SIZE = 2
 CONTEXT_LENGTH = 16
@@ -172,10 +179,18 @@ def test_generate_appends_to_prompt(prompt_length):
     assert torch.equal(token_ids[:, :prompt_length], prompt_ids)
 
 
-def test_generate_with_top_k_1_picks_most_likely_token():
+# Each filter setting leaves only the single most likely token
+@pytest.mark.parametrize(
+    "filters",
+    [
+        pytest.param({"top_k": 1}, id="top_k"),
+        pytest.param({"top_p": 1e-6}, id="top_p"),
+    ],
+)
+def test_generate_picks_most_likely_token(filters):
     gpt = make_gpt()
     prompt_length = 4
-    token_ids = gpt.generate(make_token_ids(prompt_length), max_new_tokens=5, top_k=1)
+    token_ids = gpt.generate(make_token_ids(prompt_length), max_new_tokens=5, **filters)
 
     # Causality means one forward pass over the result reproduces each step's prediction:
     # logits[:, t] saw only tokens up to t, exactly as generate did when choosing token t + 1
@@ -183,3 +198,29 @@ def test_generate_with_top_k_1_picks_most_likely_token():
         logits, _ = gpt(token_ids[:, :-1])
     most_likely = logits[:, prompt_length - 1 :].argmax(dim=-1)
     assert torch.equal(token_ids[:, prompt_length:], most_likely)
+
+
+def test_top_k_filter_keeps_k_highest_logits():
+    logits = torch.tensor([[2.0, -1.0, 3.5, 0.5, 1.2]])
+    expected = torch.tensor([[2.0, -math.inf, 3.5, -math.inf, 1.2]])
+    assert torch.equal(top_k_filter(logits, k=3), expected)
+
+
+def test_top_k_filter_keeps_all_when_k_exceeds_vocab():
+    logits = torch.randn(BATCH_SIZE, VOCAB_SIZE)
+    assert torch.equal(top_k_filter(logits, k=VOCAB_SIZE + 1), logits)
+
+
+def test_top_p_filter_keeps_fewest_tokens_reaching_p():
+    # Row 0 keeps tokens 1 and 3 (0.5 + 0.3 = 0.8 >= 0.75); row 1 keeps 2 and 4 (0.6 + 0.2)
+    probs = torch.tensor([[0.10, 0.50, 0.05, 0.30, 0.05], [0.05, 0.05, 0.60, 0.10, 0.20]])
+    removed = torch.tensor([[True, False, True, False, True], [True, True, False, True, False]])
+
+    # softmax(log(probs)) == probs, so log-probabilities serve as logits
+    filtered = top_p_filter(probs.log(), p=0.75)
+    assert torch.equal(filtered.isinf(), removed)
+
+
+def test_top_p_filter_keeps_all_when_p_is_1():
+    logits = torch.tensor([[2.0, -1.0, 3.5, 0.5, 1.2]])
+    assert torch.equal(top_p_filter(logits, p=1.0), logits)

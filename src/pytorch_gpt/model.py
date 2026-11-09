@@ -1,4 +1,4 @@
-"""The GPT model and the transformer layers it is built from."""
+"""The GPT model, the transformer layers it is built from, and sampling filters."""
 
 import math
 
@@ -151,6 +151,49 @@ class TransformerBlock(nn.Module):
         return x  # (B, T, D)
 
 
+def top_k_filter(logits: torch.Tensor, k: int) -> torch.Tensor:
+    """Keep the `k` highest logits in each row and set the rest to -inf.
+
+    Args:
+        logits: Next-token logits of shape (B, V).
+        k: Number of tokens to keep; values above V keep every token.
+
+    Returns:
+        Filtered logits of shape (B, V); softmax gives the removed tokens probability 0.
+    """
+    k = min(k, logits.shape[-1])
+
+    # topk sorts in descending order, so the last of the k values is the cutoff;
+    # [-1] rather than -1 keeps the axis, so each row compares with its own cutoff
+    cutoff = torch.topk(logits, k).values[:, [-1]]  # (B, 1)
+    return logits.masked_fill(logits < cutoff, float("-inf"))
+
+
+def top_p_filter(logits: torch.Tensor, p: float) -> torch.Tensor:
+    """Keep the fewest most likely tokens whose total probability reaches `p`.
+
+    Also called nucleus sampling. The most likely token is always kept.
+
+    Args:
+        logits: Next-token logits of shape (B, V).
+        p: Probability to cover, in (0, 1]; 1 keeps every token.
+
+    Returns:
+        Filtered logits of shape (B, V); softmax gives the removed tokens probability 0.
+    """
+    probs = F.softmax(logits, dim=-1)  # (B, V)
+    sorted_probs, sorted_indices = torch.sort(probs, dim=-1, descending=True)  # both (B, V)
+
+    # Total probability of the tokens ranked above each one; removing a token only once
+    # those already reach p keeps the token that crosses p, and always the top token
+    prob_before = torch.cumsum(sorted_probs, dim=-1) - sorted_probs  # (B, V)
+    sorted_remove = prob_before >= p  # (B, V) bool, in sorted order
+
+    # Back to vocabulary order: entry j belongs at position sorted_indices[:, j]
+    remove = sorted_remove.scatter(-1, sorted_indices, sorted_remove)  # (B, V)
+    return logits.masked_fill(remove, float("-inf"))
+
+
 class GPT(nn.Module):
     """Decoder-only transformer that predicts the next token at every position.
 
@@ -222,6 +265,7 @@ class GPT(nn.Module):
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: int | None = None,
+        top_p: float | None = None,
     ) -> torch.Tensor:
         """Extend each prompt by sampling one token at a time and feeding it back in.
 
@@ -233,6 +277,8 @@ class GPT(nn.Module):
             temperature: Positive divisor for the logits; below 1 favours likely tokens,
                 above 1 spreads probability towards unlikely ones.
             top_k: If given, sample only from the `top_k` most likely tokens.
+            top_p: If given, sample only from the fewest most likely tokens whose total
+                probability reaches `top_p`; applied after `top_k`.
 
         Returns:
             Token IDs of shape (B, T + max_new_tokens): each prompt, then its new tokens.
@@ -246,10 +292,9 @@ class GPT(nn.Module):
             logits = logits[:, -1, :] / temperature  # (B, V)
 
             if top_k is not None:
-                # topk sorts in descending order, so the last of the k values is the cutoff
-                k = min(top_k, logits.shape[-1])
-                cutoff = torch.topk(logits, k).values[:, [-1]]  # (B, 1)
-                logits = logits.masked_fill(logits < cutoff, float("-inf"))
+                logits = top_k_filter(logits, top_k)
+            if top_p is not None:
+                logits = top_p_filter(logits, top_p)
 
             probs = F.softmax(logits, dim=-1)  # (B, V)
             next_ids = torch.multinomial(probs, num_samples=1)  # (B, 1)

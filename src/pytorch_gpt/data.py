@@ -35,3 +35,32 @@ class CharTokenizer:
         returns: the string they represent
         """
         return "".join(self.id_to_char[i] for i in ids)
+
+
+def load_data(path, train_fraction=0.9):
+    """
+    Reads a text file, builds the tokenizer, and splits the encoded text.
+    path:           text file to load (str or Path)
+    train_fraction: share of the text used for training (the rest is validation)
+    returns:        tokenizer, train_ids (N_train,), val_ids (N_val,)  1D long tensors on the CPU
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Download Tiny Shakespeare with:\n"
+            "  mkdir -p data && curl -o data/input.txt "
+            "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
+        )
+
+    text = path.read_text(encoding="utf-8")
+    tokenizer = CharTokenizer(text)
+
+    # The whole text as one long tensor of token IDs (long: required by nn.Embedding)
+    all_ids = torch.tensor(tokenizer.encode(text), dtype=torch.long)  # (total characters,)
+
+    # One contiguous cut: first part for training, last part held out for validation
+    split = int(train_fraction * len(all_ids))
+    train_ids = all_ids[:split]
+    val_ids = all_ids[split:]
+
+    return tokenizer, train_ids, val_ids

@@ -104,3 +104,38 @@ class FeedForward(nn.Module):
         x = self.up_proj(x)  # (B, T, D) -> (B, T, d_ff)
         x = F.gelu(x)  # elementwise, no learned parameters
         return self.down_proj(x)  # (B, T, d_ff) -> (B, T, D)
+
+
+class TransformerBlock(nn.Module):
+    """One transformer layer: causal self-attention, then a feed-forward network.
+
+    Uses pre-norm residuals: each sublayer reads a normalised copy of x and adds its
+    output back onto x, so x itself is never normalised inside the block.
+
+    Args:
+        d_model: Width of each token's vector, D.
+        num_heads: Number of attention heads, H.
+        context_length: Longest sequence the block accepts.
+        d_ff: Width of the feed-forward hidden layer.
+    """
+
+    def __init__(self, d_model: int, num_heads: int, context_length: int, d_ff: int) -> None:
+        super().__init__()
+        # Each LayerNorm owns its own learned gain and bias, both of shape (D,)
+        self.attn_norm = nn.LayerNorm(d_model)
+        self.attn = CausalSelfAttention(d_model, num_heads, context_length)
+        self.ffn_norm = nn.LayerNorm(d_model)
+        self.ffn = FeedForward(d_model, d_ff)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply attention and then the feed-forward network, each as a residual update.
+
+        Args:
+            x: Input of shape (B, T, D), with T <= context_length.
+
+        Returns:
+            Output of shape (B, T, D).
+        """
+        x = x + self.attn(self.attn_norm(x))  # tokens exchange information
+        x = x + self.ffn(self.ffn_norm(x))  # each token is processed on its own
+        return x  # (B, T, D)

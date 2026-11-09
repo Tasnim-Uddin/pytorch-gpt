@@ -22,3 +22,26 @@ class GPTConfig:
     num_heads: int = 6
     num_layers: int = 6
     d_ff: int = 1536
+
+
+@dataclass(frozen=True, kw_only=True)
+class TrainConfig:
+    """How a model is trained; the defaults suit the default `GPTConfig` on one GPU.
+
+    Attributes:
+        batch_size: Sequences per training step, B.
+        lr: Learning rate for AdamW.
+        weight_decay: How strongly AdamW shrinks weights towards zero each step.
+        max_steps: Total number of optimizer steps.
+        eval_interval: Training steps between loss evaluations.
+        eval_steps: Batches averaged per split in each evaluation.
+        seed: Random seed for weight initialisation and batch sampling.
+    """
+
+    batch_size: int = 64
+    lr: float = 1e-3
+    weight_decay: float = 0.1
+    max_steps: int = 5000
+    eval_interval: int = 250
+    eval_steps: int = 200
+    seed: int = 0

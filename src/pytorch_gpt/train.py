@@ -1,4 +1,4 @@
-"""Train a GPT on Tiny Shakespeare, reporting its loss as it learns.
+"""Train a GPT on Tiny Shakespeare, saving the model with the lowest validation loss.
 
 Run with `uv run python -m pytorch_gpt.train`.
 """
@@ -7,16 +7,13 @@ from pathlib import Path
 
 import torch
 
+from pytorch_gpt.checkpoint import save_checkpoint
 from pytorch_gpt.config import GPTConfig, TrainConfig
 from pytorch_gpt.data import get_batch, load_data
 from pytorch_gpt.model import GPT
 
 DATA_PATH = Path("data/input.txt")
-
-# Sample printed once training ends
-PROMPT = "\n"
-MAX_NEW_TOKENS = 500
-TEMPERATURE = 0.9
+CHECKPOINT_PATH = Path("checkpoints/best.pt")
 
 
 @torch.no_grad()
@@ -75,12 +72,20 @@ def main() -> None:
         model.parameters(), lr=train_config.lr, weight_decay=train_config.weight_decay
     )
 
+    # Keep only the model that generalises best: later steps may overfit and do worse
+    best_val_loss = float("inf")
+
     # One extra pass so the finished model is evaluated too, after max_steps updates
     for step in range(train_config.max_steps + 1):
         is_last_step = step == train_config.max_steps
         if step % train_config.eval_interval == 0 or is_last_step:
             losses = estimate_loss(model, train_ids, val_ids, train_config, device)
-            print(f"step {step:5d} | train {losses['train']:.4f} | val {losses['val']:.4f}")
+            report = f"step {step:5d} | train {losses['train']:.4f} | val {losses['val']:.4f}"
+            if losses["val"] < best_val_loss:
+                best_val_loss = losses["val"]
+                save_checkpoint(CHECKPOINT_PATH, model, tokenizer, step, best_val_loss)
+                report += " | saved"
+            print(report)
         if is_last_step:
             break
 
@@ -93,10 +98,7 @@ def main() -> None:
         loss.backward()  # set each parameter's .grad to d(loss)/d(parameter)
         optimizer.step()  # update each parameter using its .grad
 
-    model.eval()
-    prompt_ids = torch.tensor([tokenizer.encode(PROMPT)], dtype=torch.long, device=device)  # (1, T)
-    output_ids = model.generate(prompt_ids, MAX_NEW_TOKENS, temperature=TEMPERATURE)
-    print(tokenizer.decode(output_ids[0].tolist()))
+    print(f"best val {best_val_loss:.4f}, saved to {CHECKPOINT_PATH}")
 
 
 if __name__ == "__main__":

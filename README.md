@@ -31,6 +31,7 @@ uv run pytest
 
 ```
 src/pytorch_gpt/
+  config.py      settings dataclasses
   tokenizer.py   text <-> token IDs
   data.py        train/validation split and random batches
   model.py       transformer layers and the GPT model

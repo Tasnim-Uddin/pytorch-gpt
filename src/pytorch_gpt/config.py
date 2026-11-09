@@ -1,4 +1,4 @@
-"""Settings dataclasses for the model."""
+"""Configuration dataclasses that group related settings."""
 
 from dataclasses import dataclass
 

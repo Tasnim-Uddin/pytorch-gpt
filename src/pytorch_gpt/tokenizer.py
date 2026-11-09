@@ -22,7 +22,11 @@ class CharTokenizer:
         self.id_to_char = {i: char for i, char in enumerate(self.chars)}  # for decode
 
     def encode(self, text: str) -> list[int]:
-        """Convert text to token IDs, one per character."""
+        """Convert text to token IDs, one per character.
+
+        Raises:
+            KeyError: If `text` contains a character outside the vocabulary.
+        """
         return [self.char_to_id[char] for char in text]
 
     def decode(self, ids: Iterable[int]) -> str:

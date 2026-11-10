@@ -6,7 +6,7 @@ Run with `uv run python -m pytorch_gpt.sample` after `pytorch_gpt.train`.
 import torch
 
 from pytorch_gpt.checkpoint import load_checkpoint
-from pytorch_gpt.train import CHECKPOINT_PATH
+from pytorch_gpt.train import BEST_CHECKPOINT_PATH
 
 # Sampling settings; None switches a filter off
 PROMPT = "\n"
@@ -19,7 +19,7 @@ TOP_P: float | None = 0.9
 def main() -> None:
     """Load the best checkpoint and print a continuation of `PROMPT`."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, tokenizer = load_checkpoint(CHECKPOINT_PATH, device)
+    model, tokenizer = load_checkpoint(BEST_CHECKPOINT_PATH, device)
 
     prompt_ids = torch.tensor([tokenizer.encode(PROMPT)], dtype=torch.long, device=device)  # (1, T)
     output_ids = model.generate(
